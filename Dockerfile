@@ -1,6 +1,6 @@
 FROM python:3.8-slim AS requirements
 
-WORKDIR /feed
+WORKDIR /cronjobs
 
 COPY . .
 
@@ -8,7 +8,7 @@ RUN find . -type f -not -name 'requirements.txt' -exec rm -rfv '{}' \;
 
 FROM python:3.8-slim AS build
 
-WORKDIR /feed
+WORKDIR /cronjobs
 
 RUN apt update \
     && apt install -y \
@@ -17,11 +17,15 @@ RUN apt update \
     libxml2-dev \
     libxslt-dev
 
-COPY --from=requirements /feed .
+COPY --from=requirements /cronjobs .
 
+RUN cd feed && ls
+
+# install dependencies for mirror-tv's feed
 RUN set -x \
+    && cd /cronjobs/feed/mirror-tv/ \
     && for dir in */ ; \
-    do if cd /feed/$dir \
+    do if cd /cronjobs/feed/mirror-tv/$dir \
     && python3 -m venv .venv \
     && . .venv/bin/activate \
     && pip3 install --upgrade pip \
@@ -31,7 +35,7 @@ RUN set -x \
 
 FROM python:3.8-slim
 
-WORKDIR /feed
+WORKDIR /cronjobs
 
-COPY --from=build /feed .
+COPY --from=build /cronjobs .
 COPY . .

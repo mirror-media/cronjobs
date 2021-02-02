@@ -8,7 +8,7 @@ metadata:
 apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
-  name: feed-google-news-rss
+  name: feed-yahoo-rss
   namespace: cron
 spec:
   schedule: "*/30 * * * *"
@@ -17,21 +17,23 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 600
+      activeDeadlineSeconds: 300
       template:
         spec:
           serviceAccountName: ksa-feed
           containers:
-            - name: mirror-tv-feed-google-news-rss
-              image: gcr.io/mirror-tv-275709/mirror-tv-feed:20210122-11
-              workingDir: /feed
+            - name: mirror-tv-feed-yahoo-rss
+              image: gcr.io/mirror-tv-275709/mirror-tv-feed:20210202-1
+              workingDir: /cronjobs/feed
               command: ["./start.sh"]
               args:
                 - $(EXECFOLDER)
                 - $(EXECSCRIPT)
               env:
                 - name: EXECFOLDER
-                  value: google_news_rss
+                  value: ./mirror-tv/yahoo_rss
                 - name: EXECSCRIPT
-                  value: generate_google_news_rss.py
+                  value: generate_yahoo_rss.py
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
           restartPolicy: OnFailure
