@@ -1,19 +1,42 @@
+from datetime import datetime, timezone
+# workaround as feegen raise error: AttributeError: module 'lxml' has no attribute 'etree'
+from lxml import etree
+from dateutil import parser, tz
+from feedgen import util
+from feedgen.feed import FeedGenerator
+from google.cloud import storage
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
-
-from feedgen.feed import FeedGenerator
-from feedgen import util
-
-from dateutil import parser, tz
-from datetime import datetime, timezone
-
-# Imports the Google Cloud client library
-from google.cloud import storage
-
+import __main__
+import argparse
 import gzip
+import yaml
+
+CONFIG_KEY = 'config'
+GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
+NUMBER_KEY = 'number'
+
+
+yaml_parser = argparse.ArgumentParser(
+    description='Process configuration of generate_google_news_rss')
+yaml_parser.add_argument('-c', '--config', dest=CONFIG_KEY,
+                         help='config file for generate_google_news_rss', metavar='FILE', type=str)
+yaml_parser.add_argument('-g', '--config-graphql', dest=GRAPHQL_CMS_CONFIG_KEY,
+                         help='graphql config file for generate_google_news_rss', metavar='FILE', type=str, required=True)
+yaml_parser.add_argument('-m', '--max-number', dest=NUMBER_KEY,
+                         help='number of feed items', metavar='75', type=int, required=True)
+args = yaml_parser.parse_args()
+
+with open(getattr(args, CONFIG_KEY), 'r') as stream:
+    config = yaml.safe_load(stream)
+with open(getattr(args, GRAPHQL_CMS_CONFIG_KEY), 'r') as stream:
+    config_graphql = yaml.safe_load(stream)
+number = getattr(args, NUMBER_KEY)
+
+print(f'[{__main__.__file__}] executing...')
 
 __gql_transport__ = RequestsHTTPTransport(
-    url='http://mirror-tv-graphql.default.svc.cluster.local/admin/api',
+    url=config_graphql['apiEndpoint'],
     use_json=True,
     headers={
         "Content-type": "application/json",
@@ -30,7 +53,7 @@ __gql_client__ = Client(
 # To retrieve the latest 25 published posts for the specified category
 __qgl_post_template__ = '''
 {
-    allPosts(where: {source: "tv", categories_some: {id: %d}, state: published}, sortBy: publishTime_DESC, first: 75) {
+    allPosts(where: {source: "tv", categories_some: {id: %d}, state: published}, sortBy: publishTime_DESC, first: %d) {
         name
         slug
         heroImage {
@@ -47,10 +70,8 @@ __qgl_post_template__ = '''
 
 '''
 
-__base_url__ = 'https://dev.mnews.tw/story/'
 
-# Instantiates a client
-__storage_client__ = storage.Client()
+__base_url__ = config['baseURL']
 
 
 def upload_data(bucket_name: str, data: bytes, content_type: str, destination_blob_name: str):
@@ -58,79 +79,56 @@ def upload_data(bucket_name: str, data: bytes, content_type: str, destination_bl
     # bucket_name = 'your-bucket-name'
     # data = 'storage-object-content'
 
-    bucket = __storage_client__.bucket(bucket_name)
+    # Instantiates a client
+    storage_client = storage.Client()
+
+    bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
     blob.content_encoding = 'gzip'
+
+    print(
+        f'[{__main__.__file__}] uploadling data to gs://{bucket_name}{destination_blob_name}')
+
     blob.upload_from_string(
-        data=gzip.compress(data=data, compresslevel=9), content_type=content_type, client=__storage_client__)
+        data=gzip.compress(data=data, compresslevel=9), content_type=content_type, client=storage_client)
     blob.content_language = 'zh'
     blob.cache_control = 'max-age=300,public'
     blob.patch()
 
+    print(
+        f'[{__main__.__file__}] finished uploading gs://{bucket_name}{destination_blob_name}')
 
-__categories__ = {
-    1: {
-        'slug': 'entertainment',
-        'name': '娛樂',
-    },
-    2: {
-        'slug': 'news',
-        'name': '時事',
-    },
-    3: {
-        'slug': 'life',
-        'name': '生活',
-    },
-    4: {
-        'slug': 'politics',
-        'name': '政治',
-    },
-    5: {
-        'slug': 'finance',
-        'name': '財經',
-    },
-    6: {
-        'slug': 'international',
-        'name': '國際',
-    },
-    8: {
-        'slug': 'person',
-        'name': '人物',
-    },
-}
 
+__categories__ = config['categories']
+
+__file_config__ = config['file']
 # The name for the new bucket
-__bucket_name__ = "static-mnews-tw-dev"
+__bucket_name__ = __file_config__['gcsBucket']
 
 # rss folder path
-__rss_base__ = 'rss'
+__rss_base__ = __file_config__['filePathBase']
 
+__config_feed__ = config['feed']
 # the timezone for rss
-__timezone__ = tz.gettz("Asia/Taipei")
+__timezone__ = tz.gettz(__config_feed__['timezone'])
 
 for id, category in __categories__.items():
-    query = gql(__qgl_post_template__ % id)
+    print(f'[{__main__.__file__}] retrieving data for category({category["slug"]})')
+    query = gql(__qgl_post_template__ % (id, number))
     result = __gql_client__.execute(query)
 
     fg = FeedGenerator()
     fg.load_extension('media', atom=False, rss=True)
-    # TODO
-    fg.title('鏡新聞 ' + category['name'] + ' Title')
-    # TODO
-    fg.description('鏡新聞 ' + category['name'] + ' Description')
-    # TODO
-    fg.id('https://dev.mnews.tw')
-    # TODO
+    fg.title(__config_feed__['title'])
+    fg.description(__config_feed__['description'])
+    fg.id(__config_feed__['id'])
     fg.pubDate(datetime.now(timezone.utc).astimezone(__timezone__))
-    # TODO
     fg.updated(datetime.now(timezone.utc).astimezone(__timezone__))
-    # TODO
-    fg.image(url='https://dev.mnews.tw/logo.png',
-             title='鏡新聞 ' + category['name'] + ' Title', link='https://dev.mnews.tw')
-    # TODO
-    fg.rights(rights='Copyright 2019-2020')
-    fg.link(href='https://dev.mnews.tw', rel='alternate')
-    fg.ttl(300)  # 5 minutes
+    fg.image(url=__config_feed__['image']['url'],
+             title=__config_feed__['image']['title'], link=__config_feed__['image']['link'])
+    fg.rights(rights=__config_feed__['copyright'])
+    fg.link(href=__config_feed__['link'], rel='alternate')
+    fg.ttl(__config_feed__['ttl'])  # 5 minutes
     fg.language('zh-TW')
 
     for item in result['allPosts']:
@@ -147,11 +145,16 @@ for id, category in __categories__.items():
             fe.media.content(
                 content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
 
+    print(f'[{__main__.__file__}] generated rss for category({category["slug"]}): {fg.rss_str(pretty=False, extensions=True,encoding="UTF-8", xml_declaration=True).decode("UTF-8")}')
+
     upload_data(
         bucket_name=__bucket_name__,
         data=fg.rss_str(pretty=False, extensions=True,
                         encoding='UTF-8', xml_declaration=True),
         content_type='application/rss+xml; charset=utf-8',
         destination_blob_name=__rss_base__ +
-        '/google_news_' + category['slug'] + '.xml'
+        f'/{__file_config__["filenamePrefix"]}_{category["slug"]}.{__file_config__["extension"]}'
     )
+
+
+print(f'[{__main__.__file__}] exiting... goodbye...')
