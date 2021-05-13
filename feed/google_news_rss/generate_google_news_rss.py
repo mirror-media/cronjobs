@@ -53,7 +53,7 @@ __gql_client__ = Client(
 # To retrieve the latest 25 published posts for the specified category
 __qgl_post_template__ = '''
 {
-    allPosts(where: {source: "tv", categories_some: {id: %d}, state: published}, sortBy: publishTime_DESC, first: %d) {
+    allPosts(where: {source: "%s", categories_some: {id: %d}, state: published}, sortBy: publishTime_DESC, first: %d) {
         name
         slug
         heroImage {
@@ -114,7 +114,8 @@ __timezone__ = tz.gettz(__config_feed__['timezone'])
 
 for id, category in __categories__.items():
     print(f'[{__main__.__file__}] retrieving data for category({category["slug"]})')
-    query = gql(__qgl_post_template__ % (id, number))
+    query = gql(__qgl_post_template__ %
+                (config['postWhereSourceFilter'], id, number))
     result = __gql_client__.execute(query)
 
     fg = FeedGenerator()
