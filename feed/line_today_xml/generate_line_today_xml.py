@@ -1,25 +1,46 @@
+from datetime import datetime, timedelta
+from dateutil import parser
+from google.cloud import storage
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
-
-import sys
-import json
-import time
-import uuid
-import pytz
-import lxml.etree as ET
-import urllib.request
-import unicodedata
-import gzip
-
-from dateutil import parser
-from datetime import datetime, timedelta
 from lxml.etree import CDATA, tostring
+import __main__
+import argparse
+import gzip
+import json
+import lxml.etree as ET
+import pytz
+import sys
+import time
+import unicodedata
+import urllib.request
+import uuid
+import yaml
 
-# Imports the Google Cloud client library
-from google.cloud import storage
+print(f'[{__main__.__file__}] executing...')
+
+CONFIG_KEY = 'config'
+GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
+NUMBER_KEY = 'number'
+
+yaml_parser = argparse.ArgumentParser(
+    description='Process configuration of generate_google_news_rss')
+yaml_parser.add_argument('-c', '--config', dest=CONFIG_KEY,
+                         help='config file for generate_google_news_rss', metavar='FILE', type=str)
+yaml_parser.add_argument('-g', '--config-graphql', dest=GRAPHQL_CMS_CONFIG_KEY,
+                         help='graphql config file for generate_google_news_rss', metavar='FILE', type=str, required=True)
+yaml_parser.add_argument('-m', '--max-number', dest=NUMBER_KEY,
+                         help='number of feed items', metavar='75', type=int, required=True)
+args = yaml_parser.parse_args()
+
+with open(getattr(args, CONFIG_KEY), 'r') as stream:
+    config = yaml.safe_load(stream)
+with open(getattr(args, GRAPHQL_CMS_CONFIG_KEY), 'r') as stream:
+    config_graphql = yaml.safe_load(stream)
+number = getattr(args, NUMBER_KEY)
 
 __gql_transport__ = RequestsHTTPTransport(
-    url='http://mirror-tv-graphql.default.svc.cluster.local/admin/api',
+    url=config_graphql['apiEndpoint'],
     use_json=True,
     headers={
         'Content-type': 'application/json',
@@ -36,7 +57,7 @@ __gql_client__ = Client(
 # To retrieve the latest 100 published posts
 __qgl_post_template__ = '''
 {
-    allPosts(where: {source: "tv", state: published}, sortBy: publishTime_DESC, first: 75) {
+    allPosts(where: %s, sortBy: publishTime_DESC, first: %d) {
         id
         name
         slug
@@ -62,7 +83,8 @@ __qgl_post_template__ = '''
 }
 '''
 
-__gql_query__ = gql(__qgl_post_template__)
+__gql_query__ = gql(__qgl_post_template__ %
+                    (config['postWhereFilter'], number))
 __result__ = __gql_client__.execute(__gql_query__)
 
 # Can not accept structure contains 'array of array'
@@ -114,11 +136,15 @@ def upload_data(bucket_name: str, data: bytes, content_type: str, destination_bl
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
     blob.content_encoding = 'gzip'
+    print(f'[{__main__.__file__}] uploadling data to gs://{bucket_name}{destination_blob_name}')
     blob.upload_from_string(
         data=gzip.compress(data=data, compresslevel=9), content_type=content_type, client=storage_client)
     blob.content_language = 'zh'
     blob.cache_control = 'max-age=300,public'
     blob.patch()
+
+    print(
+        f'[{__main__.__file__}] finished uploading gs://{bucket_name}{destination_blob_name}')
 
 
 if __name__ == '__main__':
@@ -131,7 +157,7 @@ if __name__ == '__main__':
     articles = __result__['allPosts']
 
     news_available_days = 365
-    base_url = 'https://dev.mnews.tw/story'
+    base_url = config['baseURL']
     for article in articles:
         availableDate = max(tsConverter(
             article['publishTime']), tsConverter(article['updatedAt']))
@@ -154,7 +180,7 @@ if __name__ == '__main__':
             'recommendArticles': {
                 'article': [{'title': x['name'], 'url': base_url + '/' + x['slug'] + '/'} for x in article['relatedPosts'][:6] if x]
             },
-            'author': '鏡新聞'
+            'author': config['feed']['item']['author']
         }
         if article['heroImage'] is not None:
             item['thumbnail'] = article['heroImage']['urlOriginal']
@@ -168,19 +194,21 @@ if __name__ == '__main__':
     %s
     ''' % ET.tostring(root, encoding="unicode")
 
-    # Instantiates a client
-    storage_client = storage.Client()
-
+    file_config = config['file']
     # The name for the new bucket
-    bucket_name = 'static-mnews-tw-dev'
+    bucket_name = file_config['gcsBucket']
 
     # rss folder path
-    rss_base = 'rss'
+    rss_base = file_config['filePathBase']
+
+    print(f'[{__main__.__file__}] generated xml: {data}')
 
     upload_data(
         bucket_name=bucket_name,
-        data=data.encode(),
+        data=data.encode('utf-8'),
         content_type='application/xml; charset=utf-8',
         destination_blob_name=rss_base +
-        '/line_today.xml'
+        f'/{file_config["filenamePrefix"]}.{file_config["extension"]}'
     )
+
+print(f'[{__main__.__file__}] exiting... goodbye...')
