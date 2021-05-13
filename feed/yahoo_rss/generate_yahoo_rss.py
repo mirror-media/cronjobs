@@ -123,8 +123,9 @@ for item in __result__['allPosts']:
     content = ''
 
     brief = item['briefHtml']
-    fe.description(description=brief, isSummary=True)
-    content += brief
+    if brief is not None:
+        fe.description(description=brief, isSummary=True)
+        content += brief
     if item['heroImage'] is not None:
         fe.media.content(
             content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
