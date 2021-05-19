@@ -94,7 +94,7 @@ def convert_response_to_report(config_graphql: dict, slugBlacklist: list, date_r
     data = sorted(
         data, key=lambda x: int(x['metrics'][0]['values'][0]), reverse=True)
     slugs = [item['dimensions'][0].replace(
-        '/', '') for item in data if item['dimensions'][0].replace('/') not in slugBlacklist]
+        '/', '') for item in data if item['dimensions'][0].replace('/', '') not in slugBlacklist]
 
     result['report'] = gql.gql_query_from_slugs(
         config_graphql, config['report']['fileHostDomainRule'], slugs)
@@ -120,7 +120,6 @@ __default_config = {
         'https://storage.googleapis.com/mirror-tv-file': 'https://dev.mnews.tw',
         'slugBlacklist':
         [
-            'aboutus',
         ],
     }
 }
