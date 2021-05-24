@@ -23,6 +23,7 @@ __default_config = {
         "posts": "https://api.mirrormedia.mg/drafts",
     },
     "author": "鏡週刊",
+    "blacklist": {"sectionNames": []},
     "writerID": 201,
     "source": "mm",
     "destSlugPrefix": "mm-",
@@ -136,6 +137,10 @@ def convert_and_clean_post_for_k5(posts: list, delegated_writer: int) -> list:
 def is_category_not_member_only(category: dict) -> bool:
     # is_member_only mey not be presented. In such case, we treat it as False.
     return category.get('is_member_only') in (None, False)
+
+
+def is_section_allowed(section_name_blacklist: list, section: dict) -> bool:
+    return section.get('name', None) not in set(section_name_blacklist)
 
 
 def create_authenticated_k5_client(config_graphql: dict) -> Client:
@@ -335,7 +340,12 @@ def main(config: dict = None, config_graphql: dict = None, playlist_ids: list = 
         config_graphql=config_graphql, slugs=slugs)
 
     new_posts = [
-        post for post in posts_with_new_slug if f'{post["slug"]}' not in existing_slugs_set and (all([is_category_not_member_only(c) for c in post.get('categories', [])]))]
+        post
+        for post in posts_with_new_slug
+        if f'{post["slug"]}' not in existing_slugs_set
+        and all([is_category_not_member_only(c) for c in post.get('categories', [])])
+        and all([is_section_allowed(config['blacklist']['sectionNames'], section) for section in post.get('sections', [])])
+    ]
 
     logger.info(f'news post slugs:{[post["slug"] for post in new_posts]}')
     # 3. Generate and clean up Posts for k5
