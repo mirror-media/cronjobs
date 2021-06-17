@@ -1,149 +1,16 @@
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
-from environs import Env
-from google.cloud import secretmanager
+
+import __main__
+import argparse
+import logging
 import os
 import sys
+import yaml
 
 '''
 For scheduled_editor_choices to run, a CMS bot user is required for it to mutate Editor Choices.
-
-To authenticate as the bot user, the following environmental variables are required, mainly to access GCP secret:
-
-GCP_PROJECT_ID
-GCP_SECERT_ID_CRONJOBS_USERNAME
-GCP_SECERT_VERSION_CRONJOBS_USERNAME
-GCP_SECERT_ID_CRONJOBS_PASSWORD
-GCP_SECERT_VERSION_CRONJOBS_PASSWORD
-
-The names are self explained.
 '''
-
-
-def help():
-    '''Print usage'''
-    print(f'''
-Usage:
-{os.path.basename(__file__)} "cms graphql endpoint"
-    ''')
-
-
-if len(sys.argv) != 2:
-    print('The number of arguments is wrong')
-    help()
-    exit(1)
-
-__cms_graphql_endpoint__ = sys.argv[1]
-
-__gql_transport__ = RequestsHTTPTransport(
-    url=__cms_graphql_endpoint__,
-    use_json=True,
-    headers={
-        "Content-type": "application/json",
-    },
-    verify=True,
-    retries=3,
-)
-
-__gql_client__ = Client(
-    transport=__gql_transport__,
-    fetch_schema_from_transport=False,
-)
-
-env = Env()
-env.read_env()  # read .env file, if it exists
-
-# Create the Secret Manager client.
-__secretmanager_client__ = secretmanager.SecretManagerServiceClient()
-
-__gcp_project_id__ = env('GCP_PROJECT_ID')
-
-
-def access_gcp_secret(project_id: str = __gcp_project_id__, secret_id: str = None, secret_version: str = 'latest') -> str:
-    '''access_gcp_secret returns the secret on gcp'''
-
-    if str == None:
-        raise Exception('secret_id is not provided')
-
-    # Build secret path a.k.a. secret name
-    secret_path = f'projects/{project_id}/secrets/{secret_id}/versions/{secret_version}'
-
-    # Access the secret version.
-    response = __secretmanager_client__.access_secret_version(
-        request={'name': secret_path})
-
-    # Print the secret payload.
-    #
-    # WARNING: Do not print the secret in a production environment - this
-    # snippet is showing how to access the secret material.
-    return response.payload.data.decode('UTF-8')
-
-
-# Authenticate through GraphQL
-__qgl_mutation_authenticate_get_token__ = '''
-mutation {
-  authenticate: authenticateUserWithPassword(email: "%s", password: "%s") {
-    token
-  }
-}
-'''
-
-__gcp_secert_id_cronjobs_username__ = env('GCP_SECERT_ID_CRONJOBS_USERNAME')
-__gcp_secert_version_cronjobs_username__ = env(
-    'GCP_SECERT_VERSION_CRONJOBS_USERNAME')
-__gcp_secret_id_cronjob_password__ = env('GCP_SECERT_ID_CRONJOBS_PASSWORD')
-__gcp_secret_version_cronjobs_password__ = env(
-    'GCP_SECERT_VERSION_CRONJOBS_PASSWORD')
-
-__username__ = access_gcp_secret(
-    secret_id=__gcp_secert_id_cronjobs_username__, secret_version=__gcp_secert_version_cronjobs_username__)
-__password__ = access_gcp_secret(
-    secret_id=__gcp_secret_id_cronjob_password__, secret_version=__gcp_secret_version_cronjobs_password__)
-
-mutation = gql(__qgl_mutation_authenticate_get_token__ %
-               (__username__, __password__))
-
-__token__ = __gql_client__.execute(mutation)['authenticate']['token']
-
-print(f'{os.path.basename(__file__)} has authenticated as {__username__}')
-
-__gql_transport_with_token__ = RequestsHTTPTransport(
-    url=__cms_graphql_endpoint__,
-    use_json=True,
-    headers={
-        "Content-type": "application/json",
-        'Authorization': f'Bearer {__token__}'
-    },
-    verify=True,
-    retries=3,
-)
-
-__gql_authenticated_client__ = Client(
-    transport=__gql_transport_with_token__,
-    fetch_schema_from_transport=False,
-)
-
-
-# To query the EditorChoices in state of published and scheduled, so it can tolling update their state
-__qgl_query_editor_choices_to_modify__ = '''
-{
-    allEditorChoices(where: {OR: [{state: published}, {state: scheduled}]}) {
-        id
-        state
-    }
-}
-'''
-
-query = gql(__qgl_query_editor_choices_to_modify__)
-editor_choices = __gql_authenticated_client__.execute(query)[
-    'allEditorChoices']
-
-if len(editor_choices) == 0:
-    print('There is nothing to be updated. Exit now...')
-    exit(0)
-
-print(
-    f'These editor choices are about to be updated: {editor_choices}')
 
 
 def get_updated_state_value(state: str = 'draft') -> str:
@@ -157,44 +24,150 @@ def get_updated_state_value(state: str = 'draft') -> str:
         return state
 
 
-# To update EditorChoices, data should be an array of objects containing id and data
+def change_editor_choices(config_graphql: dict):
+    cms_graphql_endpoint = config_graphql['apiEndpoint']
+    gql_transport = RequestsHTTPTransport(
+        url=cms_graphql_endpoint,
+        use_json=True,
+        headers={
+            "Content-type": "application/json",
+        },
+        verify=True,
+        retries=3,
+    )
 
-new_data_list = ['{id: "%s", data:{state: %s}}' % (
-    editor_choice["id"], get_updated_state_value(editor_choice["state"])) for editor_choice in editor_choices]
-new_data_str = '[' + ','.join(new_data_list) + ']'
+    gql_client = Client(
+        transport=gql_transport,
+        fetch_schema_from_transport=False,
+    )
 
-
-print(
-    f'The editor choices is going to be updated as: {new_data_str}')
-
-__qgl_mutate_editor_choices_template__ = '''
-mutation {
-    updateEditorChoices(data: %s) {
-        id
-        state
+    # Authenticate through GraphQL
+    qgl_mutation_authenticate_get_token = '''
+    mutation {
+    authenticate: authenticateUserWithPassword(email: "%s", password: "%s") {
+        token
     }
-}
-'''
-
-mutation = gql(__qgl_mutate_editor_choices_template__ % new_data_str)
-updateEditorChoices = __gql_authenticated_client__.execute(mutation)
-
-print(f'EditorChoices are updated as:{updateEditorChoices}')
-
-# Unauthenticate user after finishing updating to protect the user. Cronjobs' unauthentication shouldn't interfere each other.
-__qgl_mutate_unauthenticate_user__ = '''
-mutation {
-    unauthenticate: unauthenticateUser {
-        success
     }
-}
-'''
+    '''
 
-mutation = gql(__qgl_mutate_unauthenticate_user__)
-unauthenticate = __gql_authenticated_client__.execute(mutation)[
-    'unauthenticate']
+    username = config_graphql['username']
+    password = config_graphql['password']
 
-if unauthenticate['success'] == True:
-    print(f'{os.path.basename(__file__)} has unauthenticated as {__username__}')
-else:
-    print(f'{__username__} failed to unauthenticate')
+    mutation = gql(qgl_mutation_authenticate_get_token %
+                   (username, password))
+
+    token = gql_client.execute(mutation)['authenticate']['token']
+
+    print(f'{os.path.basename(__file__)} has authenticated as {username}')
+
+    gql_transport_with_token = RequestsHTTPTransport(
+        url=cms_graphql_endpoint,
+        use_json=True,
+        headers={
+            "Content-type": "application/json",
+            'Authorization': f'Bearer {token}'
+        },
+        verify=True,
+        retries=3,
+    )
+
+    gql_authenticated_client = Client(
+        transport=gql_transport_with_token,
+        fetch_schema_from_transport=False,
+    )
+
+    # To query the EditorChoices in state of published and scheduled, so it can tolling update their state
+    qgl_query_editor_choices_to_modify = '''
+    {
+        allEditorChoices(where: {OR: [{state: published}, {state: scheduled}]}) {
+            id
+            state
+        }
+    }
+    '''
+
+    query = gql(qgl_query_editor_choices_to_modify)
+    editor_choices = gql_authenticated_client.execute(query)[
+        'allEditorChoices']
+
+    if len(editor_choices) == 0:
+        print('There is nothing to be updated. Exit now...')
+        exit(0)
+
+    print(
+        f'These editor choices are about to be updated: {editor_choices}')
+
+    # To update EditorChoices, data should be an array of objects containing id and data
+
+    new_data_list = ['{id: "%s", data:{state: %s}}' % (
+        editor_choice["id"], get_updated_state_value(editor_choice["state"])) for editor_choice in editor_choices]
+    new_data_str = '[' + ','.join(new_data_list) + ']'
+
+    print(
+        f'The editor choices is going to be updated as: {new_data_str}')
+
+    qgl_mutate_editor_choices_template = '''
+    mutation {
+        updateEditorChoices(data: %s) {
+            id
+            state
+        }
+    }
+    '''
+
+    mutation = gql(qgl_mutate_editor_choices_template % new_data_str)
+    updateEditorChoices = gql_authenticated_client.execute(mutation)
+
+    print(f'EditorChoices are updated as:{updateEditorChoices}')
+
+    # Unauthenticate user after finishing updating to protect the user. Cronjobs' unauthentication shouldn't interfere each other.
+    qgl_mutate_unauthenticate_user = '''
+    mutation {
+        unauthenticate: unauthenticateUser {
+            success
+        }
+    }
+    '''
+
+    mutation = gql(qgl_mutate_unauthenticate_user)
+    unauthenticate = gql_authenticated_client.execute(mutation)[
+        'unauthenticate']
+
+    if unauthenticate['success'] == True:
+        print(f'{os.path.basename(__file__)} has unauthenticated as {username}')
+    else:
+        print(f'{username} failed to unauthenticate')
+
+
+__GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
+
+
+def main(config_graphql: dict = None):
+    ''' Import YouTube Channel program starts here '''
+    logger = logging.getLogger(__main__.__file__)
+    logger.setLevel('INFO')
+
+    change_editor_choices(config_graphql)
+
+    # 3. Generate and clean up Posts for k5
+
+
+logging.basicConfig()
+
+if __name__ == '__main__':
+    logger = logging.getLogger(__main__.__file__)
+    logger.setLevel('INFO')
+    logger.info(f'{__file__} is executing...')
+    parser = argparse.ArgumentParser(
+        description='Process configuration of importPosts')
+    parser.add_argument('-g', '--config-graphql', dest=__GRAPHQL_CMS_CONFIG_KEY,
+                        help='graphql config file for importPosts', metavar='FILE', type=str, required=True)
+
+    args = parser.parse_args()
+
+    with open(getattr(args, __GRAPHQL_CMS_CONFIG_KEY), 'r') as stream:
+        config_graphql = yaml.safe_load(stream)
+
+    main(config_graphql=config_graphql)
+
+    logger.info('exiting...good bye...')
