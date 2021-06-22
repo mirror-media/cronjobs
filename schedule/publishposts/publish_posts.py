@@ -65,18 +65,20 @@ def main(config_graphql: dict = None):
         fetch_schema_from_transport=False,
     )
 
+    now = datetime.utcnow().isoformat(timespec='microseconds') + "Z"
+
     query_scheduled_posts = '''
     {
         allPosts(where: {state: scheduled, publishTime_lte: "%s"}) {
             id
         }
     }
-    ''' % (datetime.utcnow().isoformat(timespec='microseconds') + "Z")
+    ''' % now
 
     all_posts = gql_authenticated_client.execute(
         gql(query_scheduled_posts))['allPosts']
 
-    data = ['{id: %s, data:{state: published}}' % post['id']
+    data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (post['id'], now)
             for post in all_posts]
 
     if len(data) != 0:
