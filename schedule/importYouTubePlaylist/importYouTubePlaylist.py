@@ -118,7 +118,9 @@ def main(config: dict = None, configGraphQL: dict = None, playlistIds: list = No
             playlistId=playlistId,
             fields='items(snippet/title,snippet/description,snippet/resourceId/videoId)'
         )
-        resp = requests.get(url=ytrelayPlaylistItemsAPI, params=params)
+        headers = {'Cache-Set-TTL': 600}
+        resp = requests.get(url=ytrelayPlaylistItemsAPI,
+                            params=params, headers=headers)
 
         if resp.status_code < 200 or resp.status_code >= 300:
             print(
