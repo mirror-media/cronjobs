@@ -118,7 +118,7 @@ def main(config: dict = None, configGraphQL: dict = None, playlistIds: list = No
             playlistId=playlistId,
             fields='items(snippet/title,snippet/description,snippet/resourceId/videoId)'
         )
-        headers = {'Cache-Set-TTL': 600}
+        headers = {'Cache-Set-TTL': '600'}
         resp = requests.get(url=ytrelayPlaylistItemsAPI,
                             params=params, headers=headers)
 
