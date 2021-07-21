@@ -1,12 +1,90 @@
 from apiclient import discovery
 from datetime import timedelta, date, datetime
 from google.cloud import storage
+from gql import gql, Client
+from gql.transport.aiohttp import AIOHTTPTransport
 from mergedeep import merge, Strategy
 import argparse
-import gql
 import gzip
 import json
+import logging
 import yaml
+
+
+def CDN(file_host_domain_rule: dict, url: str):
+    for key in file_host_domain_rule.keys():
+        url = url.replace(key, file_host_domain_rule[key], 1)
+    return url
+
+
+def create_authenticated_k5_client(config_graphql: dict) -> Client:
+    logger = logging.getLogger(__file__)
+    logger.setLevel('INFO')
+    # Authenticate through GraphQL
+
+    gql_endpoint = config_graphql['apiEndpoint']
+    gql_transport = AIOHTTPTransport(
+        url=gql_endpoint,
+    )
+    gql_client = Client(
+        transport=gql_transport,
+        fetch_schema_from_transport=False,
+    )
+    qgl_mutation_authenticate_get_token = '''
+    mutation {
+        authenticate: authenticateUserWithPassword(email: "%s", password: "%s") {
+            token
+        }
+    }
+    '''
+    mutation = qgl_mutation_authenticate_get_token % (
+        config_graphql['username'], config_graphql['password'])
+
+    token = gql_client.execute(gql(mutation))['authenticate']['token']
+
+    gql_transport_with_token = AIOHTTPTransport(
+        url=gql_endpoint,
+        headers={
+            'Authorization': f'Bearer {token}'
+        },
+        timeout=60
+    )
+
+    return Client(
+        transport=gql_transport_with_token,
+        execute_timeout=60,
+        fetch_schema_from_transport=False,
+    )
+
+
+def gql_query_from_slugs(config_graphql: dict, file_host_domain_rule: dict, slugs: list) -> list:
+    slug_cond = ','.join([f'{{slug: "{slug}" }}' for slug in slugs])
+
+    gql_query = f"""
+    query{{ 
+        allPosts(where: {{OR:[ {slug_cond} ] }}){{
+            id
+            heroImage {{urlMobileSized, urlTinySized}}
+            name
+            publishTime
+            slug
+            source
+        }}
+    }}
+    """
+
+    gql_client = create_authenticated_k5_client(config_graphql)
+    r = gql_client.execute(gql(gql_query))
+
+    data = r.json()['data']['allPosts']
+    for item in data:
+        if item['heroImage']:
+            item['heroImage']['urlMobileSized'] = CDN(file_host_domain_rule,
+                                                      item['heroImage']['urlMobileSized'])
+            item['heroImage']['urlTinySized'] = CDN(file_host_domain_rule,
+                                                    item['heroImage']['urlTinySized'])
+
+    return data
 
 
 def initialize_analyticsreporting() -> discovery.Resource:
@@ -96,7 +174,7 @@ def convert_response_to_report(config_graphql: dict, slugBlacklist: list, date_r
     slugs = [item['dimensions'][0].replace(
         '/', '') for item in data if item['dimensions'][0].replace('/', '') not in slugBlacklist]
 
-    result['report'] = gql.gql_query_from_slugs(
+    result['report'] = gql_query_from_slugs(
         config_graphql, config['report']['fileHostDomainRule'], slugs)
     result['start_date'] = str(date_range[0])
     result['end_date'] = str(date_range[-1])
