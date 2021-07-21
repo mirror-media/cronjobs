@@ -68,16 +68,7 @@ def get_k3_posts(k3_endpoint: str, max_results: int = 20, sort: str = '-publishe
         return json.loads(f.read().decode('utf-8'))['_items']
 
 
-def find_existing_slugs_set(config_graphql: dict = None, slugs: list = []) -> set:
-
-    gql_endpoint = config_graphql['apiEndpoint']
-    gql_transport = AIOHTTPTransport(
-        url=gql_endpoint,
-    )
-    gql_client = Client(
-        transport=gql_transport,
-        fetch_schema_from_transport=False,
-    )
+def find_existing_slugs_set(authenticated_graphql_client: Client, slugs: list = []) -> set:
 
     # format query array
     query_conditions = ','.join(
@@ -85,7 +76,7 @@ def find_existing_slugs_set(config_graphql: dict = None, slugs: list = []) -> se
     query = __query_existing_posts_template % query_conditions
     logger.info(f'query slugs for existence...')
     # extract slugs
-    existing_slugs = [post['slug'] for post in gql_client.execute(gql(query))[
+    existing_slugs = [post['slug'] for post in authenticated_graphql_client.execute(gql(query))[
         'allPosts']]
     logger.info(f'existing_slugs:{existing_slugs}')
     return set(existing_slugs)
@@ -204,11 +195,12 @@ __mutation_create_image_for_id_template = '''mutation {
 '''
 
 
-def create_and_get_image_id(client: Client, image: dict, file_host_domain_rule: dict) -> id:
+def create_and_get_image_id(authenticated_graphql_client: Client, image: dict, file_host_domain_rule: dict) -> id:
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
     query_image_ids_by_name = __query_images_by_name_template % image['name']
-    images = client.execute(gql(query_image_ids_by_name))['allImages']
+    images = authenticated_graphql_client.execute(
+        gql(query_image_ids_by_name))['allImages']
 
     if len(images) == 0:
         # create images
@@ -230,7 +222,7 @@ def create_and_get_image_id(client: Client, image: dict, file_host_domain_rule: 
                 id
             }}
         }}'''
-        created_image = client.execute(
+        created_image = authenticated_graphql_client.execute(
             gql(create_image_mutation), variable_values=params, upload_files=True)['createImage']
         id = created_image['id']
         logger.info(
@@ -241,12 +233,12 @@ def create_and_get_image_id(client: Client, image: dict, file_host_domain_rule: 
     return id
 
 
-def insert_post_to_k5(client: Client, post: dict, file_host_domain_rule: dict):
+def insert_post_to_k5(authenticated_graphql_client: Client, post: dict, source: str, file_host_domain_rule: dict):
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
     # check image existent
     if post.get('heroImage') != None:
-        hero_image_id = create_and_get_image_id(client, post.get(
+        hero_image_id = create_and_get_image_id(authenticated_graphql_client, post.get(
             'heroImage'), file_host_domain_rule)
         create_post_mutation = f'''
         mutation {{
@@ -271,7 +263,7 @@ def insert_post_to_k5(client: Client, post: dict, file_host_domain_rule: dict):
                 content: {post["contentJsonStr"]},
                 contentHtml: {post["contentHtmlJsonStr"]},
                 contentApiData: {post["contentApiDataJsonStr"]},
-                source: "{config['source']}"
+                source: "{source}"
             }}) {{
                 id
                 slug
@@ -279,11 +271,12 @@ def insert_post_to_k5(client: Client, post: dict, file_host_domain_rule: dict):
             }}
         }}'''
 
-        created_post = client.execute(gql(create_post_mutation))['createPost']
+        created_post = authenticated_graphql_client.execute(
+            gql(create_post_mutation))['createPost']
         logger.info(f'post created: {created_post}')
 
 
-def k5_signout(client: Client):
+def k5_signout(authenticated_graphql_client: Client):
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
     unauthenticate_mutation = '''
@@ -292,20 +285,17 @@ def k5_signout(client: Client):
             success
         }
     }'''
-    result = client.execute(gql(unauthenticate_mutation))
+    result = authenticated_graphql_client.execute(gql(unauthenticate_mutation))
     logger.info(result)
 
 
-def insert_posts_to_k5(config_graphql: dict, file_host_domain_rule: dict, posts: list):
+def insert_posts_to_k5(authenticated_graphql_client: Client, source: str, file_host_domain_rule: dict, posts: list):
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
-    # Authenticate through GraphQL
-    authenticated_graphql_client = create_authenticated_k5_client(
-        config_graphql)
     logger.info(f'login as {config_graphql["username"]}')
     for post in posts:
         insert_post_to_k5(authenticated_graphql_client,
-                          post, file_host_domain_rule)
+                          post, source, file_host_domain_rule)
 
     k5_signout(authenticated_graphql_client)
 
@@ -335,9 +325,12 @@ def main(config: dict = None, config_graphql: dict = None, playlist_ids: list = 
             # in case of posts without heroimage
             pass
 
+    authenticated_graphql_client = create_authenticated_k5_client(
+        config_graphql)
+
     slugs = [post['slug'] for post in posts_with_new_slug]
     existing_slugs_set = find_existing_slugs_set(
-        config_graphql=config_graphql, slugs=slugs)
+        authenticated_graphql_client=authenticated_graphql_client, slugs=slugs)
 
     new_posts = [
         post
@@ -350,9 +343,10 @@ def main(config: dict = None, config_graphql: dict = None, playlist_ids: list = 
     logger.info(f'news post slugs:{[post["slug"] for post in new_posts]}')
     # 3. Generate and clean up Posts for k5
     k5_posts = convert_and_clean_post_for_k5(new_posts, config['writerID'])
-    logger.info(f'posts generated for k5:{k5_posts}')
+    logger.debug(f'posts generated for k5:{k5_posts}')
     # 4. Insert post only or insert post and image together
-    insert_posts_to_k5(config_graphql, config['fileHostDomainRule'], k5_posts)
+    insert_posts_to_k5(
+        authenticated_graphql_client, config['source'], config['fileHostDomainRule'], k5_posts)
 
 
 logging.basicConfig()
