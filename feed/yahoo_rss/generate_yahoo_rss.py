@@ -6,13 +6,55 @@ from feedgen import util
 from feedgen.feed import FeedGenerator
 from google.cloud import storage
 from gql import gql, Client
-from gql.transport.requests import RequestsHTTPTransport
+from gql.transport.aiohttp import AIOHTTPTransport
 from json import JSONDecoder
 import __main__
 import argparse
 import gzip
 import hashlib
+import logging
 import yaml
+
+
+def create_authenticated_k5_client(config_graphql: dict) -> Client:
+    logger = logging.getLogger(__main__.__file__)
+    logger.setLevel('INFO')
+    # Authenticate through GraphQL
+
+    gql_endpoint = config_graphql['apiEndpoint']
+    gql_transport = AIOHTTPTransport(
+        url=gql_endpoint,
+    )
+    gql_client = Client(
+        transport=gql_transport,
+        fetch_schema_from_transport=False,
+    )
+    qgl_mutation_authenticate_get_token = '''
+    mutation {
+        authenticate: authenticateUserWithPassword(email: "%s", password: "%s") {
+            token
+        }
+    }
+    '''
+    mutation = qgl_mutation_authenticate_get_token % (
+        config_graphql['username'], config_graphql['password'])
+
+    token = gql_client.execute(gql(mutation))['authenticate']['token']
+
+    gql_transport_with_token = AIOHTTPTransport(
+        url=gql_endpoint,
+        headers={
+            'Authorization': f'Bearer {token}'
+        },
+        timeout=60
+    )
+
+    return Client(
+        transport=gql_transport_with_token,
+        execute_timeout=60,
+        fetch_schema_from_transport=False,
+    )
+
 
 print(f'[{__main__.__file__}] executing...')
 
@@ -36,20 +78,7 @@ with open(getattr(args, GRAPHQL_CMS_CONFIG_KEY), 'r') as stream:
     config_graphql = yaml.safe_load(stream)
 number = getattr(args, NUMBER_KEY)
 
-__gql_transport__ = RequestsHTTPTransport(
-    url=config_graphql['apiEndpoint'],
-    use_json=True,
-    headers={
-        'Content-type': 'application/json',
-    },
-    verify=True,
-    retries=3,
-)
-
-__gql_client__ = Client(
-    transport=__gql_transport__,
-    fetch_schema_from_transport=True,
-)
+__gql_client__ = create_authenticated_k5_client(config_graphql)
 
 __seven_days_ago__ = datetime.now(timezone.utc) - timedelta(days=7)
 
