@@ -76,7 +76,7 @@ def gql_query_from_slugs(config_graphql: dict, file_host_domain_rule: dict, slug
     gql_client = create_authenticated_k5_client(config_graphql)
     r = gql_client.execute(gql(gql_query))
 
-    data = r['data']['allPosts']
+    data = r['allPosts']
     for item in data:
         if item['heroImage']:
             item['heroImage']['urlMobileSized'] = CDN(file_host_domain_rule,
