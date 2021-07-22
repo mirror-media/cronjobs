@@ -168,12 +168,12 @@ def upload_blob(bucket_name: str, destination_blob_name: str, report: bytes):
 def convert_response_to_report(config_graphql: dict, slugBlacklist: list, date_range: tuple, response: dict) -> str:
     '''Parse the response and generate the json format file for it'''
     result = {}
+    data = []
     if 'rows' in response['reports'][0]['data']:
-        data = response['reports'][0]['data']['rows']
+        data.extend(response['reports'][0]['data']['rows'])
         data = sorted(
             data, key=lambda x: int(x['metrics'][0]['values'][0]), reverse=True)
-    else:
-        data = []
+
     slugs = [item['dimensions'][0].replace(
         '/', '') for item in data if item['dimensions'][0].replace('/', '') not in slugBlacklist]
 
