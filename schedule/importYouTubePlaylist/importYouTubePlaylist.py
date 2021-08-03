@@ -18,7 +18,7 @@ MAX_NUMBER_KEY = 'maxNumber'
 
 __defaultConfig = {
     'ytrelayEndpoints': {
-        'playlistItems': 'http://yt-relay.default.svc.cluster.local/youtube/v3/playlistItems',
+        'playlistItems': 'http://yt-relay-tv-yt-relay/youtube/v3/playlistItems',
     },
     'converTextToDraftApiEndpoint': 'https://api.mirrormedia.mg/converttext',
 }
@@ -141,55 +141,93 @@ def main(config: dict = None, configGraphQL: dict = None, playlistIds: list = No
         existingVideos = []
         for video in gqlAuthenticatedClient.execute(query)['allVideos']:
             parsed_url = urlparse(video['url'])
-            vqs = parse_qs(parsed_url.query).get('v','')
+            vqs = parse_qs(parsed_url.query).get('v', '')
 
             if vqs:
                 existingVideos.append(vqs[0])
             else:
                 existingVideos.append(parsed_url.path.split('/')[1])
 
+        newVideoDataStrings = []
+
         for item in items:
             if item['id'] in existingVideos:
                 print(f'Video({item["id"]}) is in CMS. Skip it.')
                 continue
-            # print(item)
+
             # save new video to CMS
             snippet = item['item']['snippet']
-            brief = convertTextToDraft(config, snippet['description'])
-            print(f'convert [{snippet["title"]}] brief to:\n{brief}')
-            insertMutationStr = f'''
-mutation {{
-    createPost(data: {{
-        slug: {json.dumps(snippet['resourceId']['videoId'], ensure_ascii=False)},
-        state: draft,
-        name: {json.dumps(snippet['title'], ensure_ascii=False)},
-        style: videoNews,
-        brief: {json.dumps(brief[0], ensure_ascii=False)},
-        briefHtml: {json.dumps(brief[1], ensure_ascii=False)},
-        briefApiData: {json.dumps(brief[2], ensure_ascii=False)},
-        source: "yt",
-        heroVideo: {{
-            create: {{
-                state: draft,
-                youtubeUrl: {json.dumps('https://www.youtube.com/watch?v=' + snippet['resourceId']['videoId'], ensure_ascii=False)},
-                name: {json.dumps(snippet['title'], ensure_ascii=False)}
+
+# Commented because the editors mey request feature of Post creation in the future
+            # brief = convertTextToDraft(config, snippet['description'])
+            # print(f'convert [{snippet["title"]}] brief to:\n{brief}')
+#             insertMutationStr = f'''
+# mutation {{
+#     createPost(data: {{
+#         slug: {json.dumps(snippet['resourceId']['videoId'], ensure_ascii=False)},
+#         state: draft,
+#         name: {json.dumps(snippet['title'], ensure_ascii=False)},
+#         style: videoNews,
+#         brief: {json.dumps(brief[0], ensure_ascii=False)},
+#         briefHtml: {json.dumps(brief[1], ensure_ascii=False)},
+#         briefApiData: {json.dumps(brief[2], ensure_ascii=False)},
+#         source: "yt",
+#         heroVideo: {{
+#             create: {{
+#                 state: draft,
+#                 youtubeUrl: {json.dumps('https://www.youtube.com/watch?v=' + snippet['resourceId']['videoId'], ensure_ascii=False)},
+#                 name: {json.dumps(snippet['title'], ensure_ascii=False)}
+#             }}
+#         }}
+#     }}){{
+#         id
+#         slug
+#     }}
+# }}
+# '''
+#             print(
+#                 f'insert mutation for post[{snippet["title"]}]:\n{insertMutationStr}')
+#             insertMutation = gql(insertMutationStr)
+#             result = gqlAuthenticatedClient.execute(insertMutation)
+#             if 'errors' not in result:
+#                 print(
+#                     f'post(id:{result["createPost"]["id"]}) is created for {snippet["title"]}')
+#             else:
+#                 print(f'[Error] {result["errors"]}')
+
+            # we create the videos only
+            videoGql = f'''{{
+                data: {{
+                    state: draft,
+                    youtubeUrl: {json.dumps('https://www.youtube.com/watch?v=' + snippet['resourceId']['videoId'], ensure_ascii=False)},
+                    name: {json.dumps(snippet['title'], ensure_ascii=False)}
+                }}
             }}
-        }}
-    }}){{
-        id
-        slug
-    }}
-}}
-'''
-            print(
-                f'insert mutation for post[{snippet["title"]}]:\n{insertMutationStr}')
-            insertMutation = gql(insertMutationStr)
-            result = gqlAuthenticatedClient.execute(insertMutation)
+            '''
+
+            newVideoDataStrings.append(videoGql)
+
+        if len(newVideoDataStrings) != 0:
+            createVideosMutationStr = '''
+            mutation {
+                createVideos(data:[%s]){
+                    id
+                    name
+                }
+            }
+            ''' % ', '.join(newVideoDataStrings)
+
+            result = gqlAuthenticatedClient.execute(
+                gql(createVideosMutationStr))
+
             if 'errors' not in result:
+                newItems = [{'id': video['id'], 'name': video['name']}
+                            for video in result["createVideos"]]
                 print(
-                    f'post(id:{result["createPost"]["id"]}) is created for {snippet["title"]}')
+                    f'created {newItems}')
             else:
                 print(f'[Error] {result["errors"]}')
+                sys.exit(1)
 
 
 if __name__ == '__main__':
