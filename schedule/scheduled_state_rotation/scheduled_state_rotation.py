@@ -24,7 +24,7 @@ def get_updated_state_value(state: str = 'draft') -> str:
         return state
 
 
-def change_editor_choices(config_graphql: dict):
+def create_authenticated_client(config_graphql: dict):
     cms_graphql_endpoint = config_graphql['apiEndpoint']
     gql_transport = RequestsHTTPTransport(
         url=cms_graphql_endpoint,
@@ -71,12 +71,33 @@ def change_editor_choices(config_graphql: dict):
         retries=3,
     )
 
-    gql_authenticated_client = Client(
+    return Client(
         transport=gql_transport_with_token,
         fetch_schema_from_transport=False,
     )
 
-    # To query the EditorChoices in state of published and scheduled, so it can tolling update their state
+
+def unauthenticate_graphql_user(gql_authenticated_client: Client, username: str):
+    qgl_mutate_unauthenticate_user = '''
+    mutation {
+        unauthenticate: unauthenticateUser {
+            success
+        }
+    }
+    '''
+
+    mutation = gql(qgl_mutate_unauthenticate_user)
+    unauthenticate = gql_authenticated_client.execute(mutation)[
+        'unauthenticate']
+
+    if unauthenticate['success'] == True:
+        print(f'{os.path.basename(__file__)} has unauthenticated as {username}')
+    else:
+        print(f'{username} failed to unauthenticate')
+
+
+def change_editor_choices(client: Client):
+
     qgl_query_editor_choices_to_modify = '''
     {
         allEditorChoices(where: {OR: [{state: published}, {state: scheduled}]}) {
@@ -87,7 +108,7 @@ def change_editor_choices(config_graphql: dict):
     '''
 
     query = gql(qgl_query_editor_choices_to_modify)
-    editor_choices = gql_authenticated_client.execute(query)[
+    editor_choices = client.execute(query)[
         'allEditorChoices']
 
     if len(editor_choices) == 0:
@@ -116,40 +137,24 @@ def change_editor_choices(config_graphql: dict):
     '''
 
     mutation = gql(qgl_mutate_editor_choices_template % new_data_str)
-    updateEditorChoices = gql_authenticated_client.execute(mutation)
+    updateEditorChoices = client.execute(mutation)
 
     print(f'EditorChoices are updated as:{updateEditorChoices}')
-
-    # Unauthenticate user after finishing updating to protect the user. Cronjobs' unauthentication shouldn't interfere each other.
-    qgl_mutate_unauthenticate_user = '''
-    mutation {
-        unauthenticate: unauthenticateUser {
-            success
-        }
-    }
-    '''
-
-    mutation = gql(qgl_mutate_unauthenticate_user)
-    unauthenticate = gql_authenticated_client.execute(mutation)[
-        'unauthenticate']
-
-    if unauthenticate['success'] == True:
-        print(f'{os.path.basename(__file__)} has unauthenticated as {username}')
-    else:
-        print(f'{username} failed to unauthenticate')
 
 
 __GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
 
 
 def main(config_graphql: dict = None):
-    ''' Import YouTube Channel program starts here '''
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
 
-    change_editor_choices(config_graphql)
+    authenticated_gql_client = create_authenticated_client(config_graphql)
 
-    # 3. Generate and clean up Posts for k5
+    change_editor_choices(authenticated_gql_client)
+
+    unauthenticate_graphql_user(
+        authenticated_gql_client, config_graphql['username'])
 
 
 logging.basicConfig()
