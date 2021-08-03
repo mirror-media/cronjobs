@@ -96,50 +96,76 @@ def unauthenticate_graphql_user(gql_authenticated_client: Client, username: str)
         print(f'{username} failed to unauthenticate')
 
 
-def change_editor_choices(client: Client):
-
-    qgl_query_editor_choices_to_modify = '''
-    {
-        allEditorChoices(where: {OR: [{state: published}, {state: scheduled}]}) {
-            id
-            state
-        }
-    }
-    '''
-
-    query = gql(qgl_query_editor_choices_to_modify)
-    editor_choices = client.execute(query)[
-        'allEditorChoices']
-
-    if len(editor_choices) == 0:
-        print('There is nothing to be updated. Exit now...')
-        exit(0)
-
-    print(
-        f'These editor choices are about to be updated: {editor_choices}')
-
-    # To update EditorChoices, data should be an array of objects containing id and data
+def update_multiple_states(client: Client, mutation_name: str, content: list):
 
     new_data_list = ['{id: "%s", data:{state: %s}}' % (
-        editor_choice["id"], get_updated_state_value(editor_choice["state"])) for editor_choice in editor_choices]
+        data["id"], get_updated_state_value(data["state"])) for data in content]
     new_data_str = '[' + ','.join(new_data_list) + ']'
 
-    print(
-        f'The editor choices is going to be updated as: {new_data_str}')
+    print(f'{mutation_name} is going to update: {new_data_str}')
 
     qgl_mutate_editor_choices_template = '''
-    mutation {
-        updateEditorChoices(data: %s) {
-            id
-            state
+        mutation {
+            %s(data: %s) {
+                id
+                state
+            }
         }
-    }
     '''
 
-    mutation = gql(qgl_mutate_editor_choices_template % new_data_str)
-    updateEditorChoices = client.execute(mutation)
+    mutation = gql(
+        qgl_mutate_editor_choices_template % (mutation_name, new_data_str)
+    )
 
-    print(f'EditorChoices are updated as:{updateEditorChoices}')
+    updatedData = client.execute(mutation)
+
+    print(f'{mutation_name} updated:{updatedData}')
+
+    return updatedData
+
+
+def rotate_and_update_states(client: Client):
+
+    where_condition = '{OR: [{state: published}, {state: scheduled}]}'
+
+    qgl_query_content_to_modify = '''
+    {
+        allEditorChoices(where: %s) {
+            state
+            id
+        }
+        allVideoEditorChoices(where: %s) {
+            state
+            id
+        }
+        allPromotionVideos(where: %s) {
+            state
+            id
+        }
+    }
+    ''' % (where_condition, where_condition, where_condition)
+
+    content = client.execute(gql(qgl_query_content_to_modify))
+
+    editor_choices = content['allEditorChoices']
+    if len(editor_choices) != 0:
+        update_multiple_states(client, 'updateEditorChoices', editor_choices)
+    else:
+        print('There is nothing to be updated for EditorChoice')
+
+    video_editor_choices = content['allVideoEditorChoices']
+    if len(video_editor_choices) != 0:
+        update_multiple_states(
+            client, 'updateVideoEditorChoices', video_editor_choices)
+    else:
+        print('There is nothing to be updated for VideoEditorChoice')
+
+    promotion_videos = content['allPromotionVideos']
+    if len(promotion_videos) != 0:
+        update_multiple_states(
+            client, 'updatePromotionVideos', promotion_videos)
+    else:
+        print('There is nothing to be updated for PromotionVideo')
 
 
 __GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
@@ -151,7 +177,7 @@ def main(config_graphql: dict = None):
 
     authenticated_gql_client = create_authenticated_client(config_graphql)
 
-    change_editor_choices(authenticated_gql_client)
+    rotate_and_update_states(authenticated_gql_client)
 
     unauthenticate_graphql_user(
         authenticated_gql_client, config_graphql['username'])
