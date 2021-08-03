@@ -13,7 +13,7 @@ For scheduled_editor_choices to run, a CMS bot user is required for it to mutate
 '''
 
 
-def get_updated_state_value(state: str = 'draft') -> str:
+def get_updated_state(state: str = 'draft') -> str:
     states_waterfall = ['scheduled', 'published', 'draft']
 
     # update the state value according to the original state, only scheduled and published will not cause an exception
@@ -99,7 +99,7 @@ def unauthenticate_graphql_user(gql_authenticated_client: Client, username: str)
 def update_multiple_states(client: Client, mutation_name: str, content: list):
 
     new_data_list = ['{id: "%s", data:{state: %s}}' % (
-        data["id"], get_updated_state_value(data["state"])) for data in content]
+        data["id"], get_updated_state(data["state"])) for data in content]
     new_data_str = '[' + ','.join(new_data_list) + ']'
 
     print(f'{mutation_name} is going to update: {new_data_str}')
