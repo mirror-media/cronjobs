@@ -72,16 +72,24 @@ def main(config_graphql: dict = None):
         allPosts(where: {state: scheduled, publishTime_lte: "%s"}) {
             id
         }
+        allArtShows(where:{ state: scheduled, publishTime_lte: "%s"}) {
+            id
+        }
     }
-    ''' % now
+    ''' % (now, now)
 
-    all_posts = gql_authenticated_client.execute(
-        gql(query_scheduled_posts))['allPosts']
+    resp = gql_authenticated_client.execute(
+        gql(query_scheduled_posts))
+    all_posts = resp['allPosts']
+    all_art_shows = resp['allArtShows']
 
-    data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (post['id'], now)
-            for post in all_posts]
+    post_data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (post['id'], now)
+                 for post in all_posts]
 
-    if len(data) != 0:
+    art_show_data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (art_show['id'], now)
+                     for art_show in all_art_shows]
+
+    if len(post_data) != 0:
         publish_mutation = '''
         mutation {
             updatePosts(data: [%s]){
@@ -89,14 +97,24 @@ def main(config_graphql: dict = None):
                 name
                 state
             }
+            updateArtShows(data: [%s]){
+                id
+                name
+                state
+            }
         }
-        ''' % ' ,'.join(data)
+        ''' % (' ,'.join(post_data), ' ,'.join(art_show_data))
 
-        updatePosts = gql_authenticated_client.execute(
-            gql(publish_mutation))['updatePosts']
-        for post in updatePosts:
+        resp = gql_authenticated_client.execute(
+            gql(publish_mutation))
+        updated_posts = resp['updatePosts']
+        for post in updated_posts:
             logger.info(
                 f'post(id: {post["id"]}) {post["name"]} is {post["state"]}')
+        updated_art_shows = resp['updateArtShows']
+        for art_show in updated_art_shows:
+            logger.info(
+                f'post(id: {art_show["id"]}) {art_show["name"]} is {art_show["state"]}')
     else:
         logger.info('there is no scheduled post ready to be published')
 
