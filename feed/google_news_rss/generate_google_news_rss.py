@@ -83,11 +83,12 @@ __gql_client__ = create_authenticated_k5_client(config_graphql)
 # To retrieve the latest 25 published posts for the specified category
 __qgl_post_template__ = '''
 {
-    allPosts(where: {%s, categories_some: {slug: "%s"}, state: published}, sortBy: publishTime_DESC, first: %d) {
+    allPosts(where: {%s, categories_some: {slug: "%s"}, state: published, isAdvertised_not:true}, sortBy: publishTime_DESC, first: %d) {
         name
         slug
         briefHtml
         contentHtml
+        heroCaption
         heroImage {
             urlOriginal
             name
@@ -193,9 +194,14 @@ for id, category in __categories__.items():
         if item['heroImage'] is not None:
             fe.media.content(
                 content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
-            content += '<img src="%s" alt="%s" />' % (
-                item['heroImage']['urlOriginal'], item['heroImage']['name'])
+            if item['heroCaption'] is not None:
+                content += '<img src="%s" alt="%s" />' % (
+                item['heroImage']['urlOriginal'], item['heroCaption'])
+            else:
+                content += '<img src="%s" />' % (
+                    item['heroImage']['urlOriginal'])
         if item['contentHtml'] is not None:
+            #content += re.sub(__config_feed__['ytb_iframe_regex'], '',item['contentHtml'])
             content += item['contentHtml']
         if len(item['relatedPosts']) > 0:
             #content += __config_feed__['item']['relatedPostPrependHtml']

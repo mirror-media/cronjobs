@@ -112,7 +112,7 @@ def getPostsUpdatedBetween(client: Client, startDt, endDt=None):
     getScheduledItemsQuery = gql(
         """
         query {
-            allPosts(where: { AND: [ { OR: [{isAdvertised: null}, {isAdvertised: false}]}, %s ] }) {
+            allPosts(where: %s ) {
                 id
                 slug
                 name

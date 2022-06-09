@@ -92,6 +92,7 @@ __qgl_post_template__ = '''
         name
         slug
         contentHtml
+        heroCaption
         heroImage {
             urlOriginal
             name
@@ -191,7 +192,11 @@ if __name__ == '__main__':
     for article in articles:
         availableDate = max(tsConverter(
             article['publishTime']), tsConverter(article['updatedAt']))
-        content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', article['contentHtml'])
+   
+        if article['contentHtml']is not None:
+            content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', article['contentHtml'])
+            #content = re.sub(config['feed']['item']['ytb_iframe_regex'], '',article['contentHtml'])
+        else: content = ''
         title = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', article['name'])
         item = {
             'ID': article['id'],

@@ -76,7 +76,7 @@ steps:
       - '-f'
       - $_FILE_TO_DEPLOY
       - '--validate=true'
-timeout: 900s
+timeout: 1200s
 substitutions:
   _KUSTOMIZATION_ROOTS: .
   _FILE_TO_DEPLOY: config-to-deploy.txt
