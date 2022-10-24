@@ -88,6 +88,9 @@ if __name__ == '__main__':
         if article['categories']:
             item['category'] = article['categories'][0]['name']
         item['publishTimeUnix'] = availableDate
+        if article['updatedAt'] is not None:
+            updateTimeUnix = tsConverter(article['updatedAt'])
+            item['updateTimeUnix'] = updateTimeUnix
         item['contentType'] = 5
         if article['description'] is not None:
             content = re.sub(
