@@ -6,6 +6,10 @@ import datetime
 from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 from google.cloud import storage
+import json
+import sys
+sys.path.append('/cronjobs')
+from feed.utils import create_authenticated_k5_client
 
 CONFIG_KEY = 'config'
 GRAPHQL_CMS_CONFIG_KEY = 'graphqlCMS'
@@ -36,41 +40,12 @@ __destination_prefix__ = __file_config__['destination_prefix']
 __template__ = config['template']
 __src_file_name__ = __file_config__['src_file_name']
 
-def create_authenticated_k5_client(config_graphql: dict) -> Client:
-    logger = logging.getLogger(__main__.__file__)
-    logger.setLevel('INFO')
-    # Authenticate through GraphQL
+video_data = {}
 
-    gql_endpoint = config_graphql['apiEndpoint']
-    gql_transport = AIOHTTPTransport(url = gql_endpoint)
-    gql_client = Client(transport = gql_transport,
-                        fetch_schema_from_transport = False)
-    qgl_mutation_authenticate_get_token = '''
-    mutation{
-      authenticateUserWithPassword(email:"%s", password: "%s"){
-      token 
-    }
-  }
-  '''
-    mutation = qgl_mutation_authenticate_get_token % (
-        config_graphql['username'], config_graphql['password'])
 
-    token = gql_client.execute(gql(mutation))[
-        'authenticateUserWithPassword']['token']
+def string_wrapper(s):
+    return f'<![CDATA[{s}]]>'
 
-    gql_transport_with_token = AIOHTTPTransport(
-        url = gql_endpoint,
-        headers = {
-            'Authorization': f'Bearer {token}'
-        },
-        timeout = 60
-    )
-
-    return Client(
-        transport = gql_transport_with_token,
-        execute_timeout = 60,
-        fetch_schema_from_transport = False,
-    )
 
 def query_show_slug(endpoints, gql_client):
     query_show = '''
@@ -82,7 +57,7 @@ def query_show_slug(endpoints, gql_client):
     '''
     query = gql(query_show)
     allShows = gql_client.execute(query)
-    if isinstance(allShows, dict) and 'allShows' in allShows: 
+    if isinstance(allShows, dict) and 'allShows' in allShows:
         allShows = allShows['allShows']
         if isinstance(allShows, list) and allShows:
             for item in allShows:
@@ -91,6 +66,7 @@ def query_show_slug(endpoints, gql_client):
                 endpoints.append(show)
     else:
         print("no show")
+
 
 def query_cate_slug(endpoints, gql_client):
     categories = []
@@ -105,7 +81,7 @@ def query_cate_slug(endpoints, gql_client):
     allCategories = gql_client.execute(query)
     if isinstance(allCategories, dict) and 'allCategories' in allCategories:
         allCategories = allCategories['allCategories']
-        if isinstance(allCategories, list) and allCategories: 
+        if isinstance(allCategories, list) and allCategories:
             for item in allCategories:
                 slug = item['slug']
                 categories.append(slug)
@@ -118,10 +94,10 @@ def query_cate_slug(endpoints, gql_client):
                 endpoints.append(cate)
         else:
             print("no cate")
-    return categories 
+    return categories
 
 
-def querty_latest_slug(endpoints, gql_client):
+def query_latest_slug(endpoints, gql_client):
 
     query_latest = '''
     query{
@@ -135,7 +111,7 @@ def querty_latest_slug(endpoints, gql_client):
     allPosts = gql_client.execute(query)
     if isinstance(allPosts, dict) and 'allPosts' in allPosts:
         allPosts = allPosts['allPosts']
-        if isinstance(allPosts, list) and allPosts :
+        if isinstance(allPosts, list) and allPosts:
             for item in allPosts:
                 slug = item['slug']
                 post = '/story/' + slug
@@ -144,26 +120,55 @@ def querty_latest_slug(endpoints, gql_client):
             print("no latest post")
 
 
+def concate_video(item):
+    video = ''
+    if item['name'] and item['content'] and item['heroImage'] and item['briefHtml']:
+        title = item['name']
+        draft_content = item['content']
+        draft_content = json.loads(draft_content)
+        thumbnail_loc = item['heroImage']['urlOriginal']
+        description = string_wrapper(item['briefHtml'])
+
+        if draft_content['entityMap']:
+            entityMap = draft_content['entityMap']
+            for v in entityMap.values():
+                if v['type'] == 'YOUTUBE':
+                    yt_id = v['data']['id'] if 'id' in v['data'] else v['data']['youtubeId']
+                    content_loc = f"<video:player_loc>https://www.youtube.com/watch?v={yt_id}</video:player_loc>"
+                    video += __template__['video'].format(
+                        thumbnail_loc, title, description, content_loc)
+    return video if video else False
+
+
 def query_post_slug(cate, gql_client):
     post_endpoint = []
     query_post = '''query{
     allPosts(where:{state:published, categories_some:{slug:"%s"}
     }, sortBy:publishTime_DESC, first:200){
     slug
+    style
+    name
+    content
+    briefHtml
+    heroImage{
+        urlOriginal
+        }
     }
 }''' % cate
     query = gql(query_post)
     allPosts = gql_client.execute(query)
     if isinstance(allPosts, dict) and 'allPosts' in allPosts:
         allPosts = allPosts['allPosts']
-        if isinstance(allPosts, list)and allPosts :
+        if isinstance(allPosts, list) and allPosts:
             for item in allPosts:
                 slug = item['slug']
                 post = '/story/' + slug
                 post_endpoint.append(post)
+                if item['style'] == 'videoNews':
+                    video_tag_content = concate_video(item)
+                    if video_tag_content:
+                        video_data[post] = video_tag_content
     return post_endpoint
-    
-    
 
 
 def generate_sitemap_xml(endpoint_slug):
@@ -176,7 +181,10 @@ def generate_sitemap_xml(endpoint_slug):
             priority = 1.0
         else:
             priority = 0.5
-        url_tag = sitemap_template['urltag'].format(loc, lastmod, priority)
+        video_tag = ''
+        if slug in video_data:
+            video_tag = video_data[slug]
+        url_tag = sitemap_template['urltag'].format(loc, lastmod, priority, video_tag)
         sitemap += url_tag
     sitemap += sitemap_template['endtag']
     return sitemap
@@ -208,7 +216,7 @@ def sitemap():
     hp_endpoint_slug = config['configs_endpoint']
     categories = query_cate_slug(hp_endpoint_slug, gql_client)
     query_show_slug(hp_endpoint_slug, gql_client)
-    querty_latest_slug(hp_endpoint_slug, gql_client)
+    query_latest_slug(hp_endpoint_slug, gql_client)
     homepage_sitemap = generate_sitemap_xml(hp_endpoint_slug)
     # store and upload homepage sitemap
     source_file_name = __src_file_name__['homepage']
@@ -226,10 +234,10 @@ def sitemap():
                 continue
             post_endpoint_slug = query_post_slug(cate, gql_client)
             if post_endpoint_slug:
-                post_sitemap = generate_sitemap_xml(post_endpoint_slug)     
+                post_sitemap = generate_sitemap_xml(post_endpoint_slug)
             else:
-                    print("no post")
-                    continue
+                print("no post")
+                continue
             source_file_name = __src_file_name__['cate_post'].format(cate)
             destination_blob_name = __destination_prefix__ + source_file_name
             with open(source_file_name, 'w', encoding='utf8') as f:
