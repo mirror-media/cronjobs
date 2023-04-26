@@ -159,7 +159,7 @@ if __name__ == '__main__':
             for relatedPost in article['relatedPosts']:
                 if relatedPost:
                     relatedPostTitle = relatedPost['name']
-                    relatedPostUrl = base_url + relatedPost['slug'] + config['feed']['item']['utmSource'] + '_' + article['slug']
+                    relatedPostUrl = base_url + relatedPost['slug'] + config['feed']['item']['utmSource'] + '_' + article['slug'] + '_' + title
                     content += '<li><a href="%s">%s</li>' % (relatedPostUrl, relatedPostTitle)
                     recommendArticle = {'title': relatedPostTitle, 'url': relatedPostUrl }
                     if relatedPost['heroImage'] is not None:

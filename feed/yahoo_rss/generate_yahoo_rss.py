@@ -197,7 +197,7 @@ for item in __result__['allPosts']:
         content += __config_feed__['item']['relatedPostPrependHtml']
         for related_post in item['relatedPosts'][:3]:
             content += '<br/><a href="%s">%s</a>' % (
-                __base_url__+related_post['slug'], related_post['name'])
+                __base_url__+related_post['slug']+ config['feed']['item']['utmSource'] + '_' + item['slug'] + '_' + name, related_post['name'])
     content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', content)
     fe.content(content=content, type='CDATA')
     fe.category(
