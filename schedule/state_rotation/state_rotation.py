@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 import yaml
-
+from datetime import datetime, timedelta
 '''
 For scheduled_editor_choices to run, a CMS bot user is required for it to mutate Editor Choices.
 '''
@@ -125,25 +125,29 @@ def update_multiple_states(client: Client, mutation_name: str, content: list):
 
 
 def rotate_and_update_states(client: Client):
-
-    where_condition = '{OR: [{state: published}, {state: scheduled}]}'
-    promotionVideos_where_condition = '{state: scheduled}'
+    today = (datetime.utcnow() + timedelta(hours=8)).strftime('%Y-%m-%d')
+    where_condition = 'OR: [{state: published}, {state: scheduled}]'
+    editor_choices_condition = '''OR:[
+    {AND:[{OR:[{expiredDate:null}, {expiredDate_in:"%s"}]}, {state:published}]},
+    {AND:[{OR:[{publishedDate:null}, {publishedDate_in:"%s"}]}, {state:scheduled}]}]
+    ''' % (today, today)
+    promotionVideos_where_condition = 'state: scheduled'
     qgl_query_content_to_modify = '''
     {
-        allEditorChoices(where: %s) {
+        allEditorChoices(where: {%s}) {
             state
             id
         }
-        allVideoEditorChoices(where: %s) {
+        allVideoEditorChoices(where: {%s}) {
             state
             id
         }
-        allPromotionVideos(where: %s) {
+        allPromotionVideos(where: {%s}) {
             state
             id
         }
     }
-    ''' % (where_condition, where_condition, promotionVideos_where_condition)
+    ''' % (editor_choices_condition, where_condition, promotionVideos_where_condition)
 
     content = client.execute(gql(qgl_query_content_to_modify))
 
