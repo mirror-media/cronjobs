@@ -1,6 +1,6 @@
 **/.venv
 **/.*
 
-./schedule/importPosts
+#./schedule/importPosts
 # folder used for intermediate data
 dockerignore
