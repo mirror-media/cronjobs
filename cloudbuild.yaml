@@ -58,6 +58,8 @@ steps:
 
         # append separate line after each generated kubernetes config
 
+        perl -pi -e 's/v1beta1/v1/g' $_FILE_TO_DEPLOY
+
         echo "---" >> $_FILE_TO_DEPLOY
 
         done
