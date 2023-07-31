@@ -104,9 +104,6 @@ if __name__ == '__main__':
                     relatedPostTitle = relatedPost['name']
                     relatedPostUrl = base_url + relatedPost['slug'] + config['feed']['item']['utmSource'] + '_' + article['name']
                     content += '<li><a href="%s">%s</li>' % (relatedPostUrl, relatedPostTitle)
-                    recommendArticle = {'title': relatedPostTitle, 'url': relatedPostUrl}
-                    if relatedPost['heroImage'] is not None:
-                        recommendArticle['thumbnail'] = relatedPost['heroImage']['urlOriginal']
             content += "</ul>"
         item['contents'] = {'video': {'url': article['url']}, 'text': {'content': content}}
         item['author'] = config['feed']['item']['author']
