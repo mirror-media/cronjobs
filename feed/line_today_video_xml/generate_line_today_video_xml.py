@@ -99,7 +99,6 @@ if __name__ == '__main__':
             content = config['feed']['item']['officialLine']
         if article['relatedPosts']:
             content += config['feed']['item']['relatedPostPrependHtml']
-            recommendArticles = []
             for relatedPost in article['relatedPosts']:
                 if relatedPost:
                     relatedPostTitle = relatedPost['name']
@@ -108,11 +107,8 @@ if __name__ == '__main__':
                     recommendArticle = {'title': relatedPostTitle, 'url': relatedPostUrl}
                     if relatedPost['heroImage'] is not None:
                         recommendArticle['thumbnail'] = relatedPost['heroImage']['urlOriginal']
-                    recommendArticles.append(recommendArticle)
             content += "</ul>"
         item['contents'] = {'video': {'url': article['url']}, 'text': {'content': content}}
-        if article['relatedPosts']:
-            item['recommendArticles'] = {'article': recommendArticles}
         item['author'] = config['feed']['item']['author']
         mainXML['article'].append(item)
 

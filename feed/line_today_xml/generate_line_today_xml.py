@@ -155,7 +155,6 @@ if __name__ == '__main__':
             item['thumbnail'] = article['heroImage']['urlOriginal']
         if article['relatedPosts']:
             content += config['feed']['item']['relatedPostPrependHtml']
-            recommendArticles = []
             for relatedPost in article['relatedPosts']:
                 if relatedPost:
                     relatedPostTitle = relatedPost['name']
@@ -164,11 +163,8 @@ if __name__ == '__main__':
                     recommendArticle = {'title': relatedPostTitle, 'url': relatedPostUrl }
                     if relatedPost['heroImage'] is not None:
                         recommendArticle['thumbnail'] = relatedPost['heroImage']['urlOriginal']
-                    recommendArticles.append(recommendArticle)
             content += "</ul>"
         item['contents'] = {'text':{'content': content}}
-        if article['relatedPosts']:
-            item['recommendArticles'] = {'article': recommendArticles}
         item['author'] = config['feed']['item']['author']
         item['sourceUrl'] = base_url + article['slug'] + config['feed']['item']['utmSource']      
         if article['tags']:
