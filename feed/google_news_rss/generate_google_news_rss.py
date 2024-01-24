@@ -182,7 +182,7 @@ for id, category in __categories__.items():
             u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', item['name'])
         fe.title(name)
         fe.link(href=__base_url__+item['slug'], rel='alternate')
-        fe.guid(__base_url__ + item['slug'])
+        fe.guid(__base_url__ + item['slug'], isPermaLink="true")
         fe.pubDate(util.formatRFC2822(
             parser.isoparse(item['publishTime']).astimezone(__timezone__)))
 
