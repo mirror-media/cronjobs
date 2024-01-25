@@ -35,10 +35,6 @@ steps:
 
         mv ./dockerignore/kubernetes-configs/cronjobs /workspace/cronjobs
 
-        ls /workspace/
-        ls /workspace/cronjobs/
-        pwd
-
         # read kustimization roots from substitution variable
 
         IFS=',' read -r -a kustomize_roots <<< $_KUSTOMIZATION_ROOTS
@@ -48,10 +44,7 @@ steps:
 
         do
 
-        cd /workspace/$kr
-        pwd
-        ls -l
-
+        echo $kr
         # set the image
         cron="cronjobs-tv-"${kr/*\//}
 
