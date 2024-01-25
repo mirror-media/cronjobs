@@ -50,7 +50,7 @@ steps:
 
         # update docker image
         /workspace/kustomize edit set image
-        ${cron}=gcr.io/${PROJECT_ID}/cronjobs:${BRANCH_NAME}_${SHORT_SHA}
+        ${cron}=gcr.io/${PROJECT_ID}/cronjobs:${BRANCH_NAME}_${SHORT_SHA}_${BUILD_ID}
 
         # generate kubernetes configs from each kustimization root
 
