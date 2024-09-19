@@ -112,7 +112,7 @@ def getPostsUpdatedBetween(client: Client, startDt, endDt=None):
     getScheduledItemsQuery = gql(
         """
         query {
-            allPosts(where: { AND: [ { OR: [{isAdvertised: null}, {isAdvertised: false}]}, %s ] }) {
+            allPosts(where: %s ) {
                 id
                 slug
                 name
@@ -156,10 +156,6 @@ def getPostsUpdatedBetween(client: Client, startDt, endDt=None):
                 style
                 briefHtml
                 contentHtml
-                topics {
-                    name
-                    brief
-                }
                 tags {
                     name
                     ogTitle
@@ -190,6 +186,9 @@ def clean(post, option: dict = None):
         try:
             cleanedPost[field] = post[field]
         except KeyError:
+            if field == "topics":
+                cleanedPost[field] = []
+                continue
             print(
                 f"[SearchFeed] id({_id}) post doesn't have field: {field}\n")
 
