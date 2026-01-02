@@ -20,7 +20,7 @@ import re
 def create_authenticated_k5_client(config_graphql: dict) -> Client:
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
-    # Authenticate through GraphQL
+    # Authenticate through GraphQL 
 
     gql_endpoint = config_graphql['apiEndpoint']
     gql_transport = AIOHTTPTransport(
