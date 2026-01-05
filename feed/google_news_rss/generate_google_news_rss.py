@@ -83,11 +83,12 @@ __gql_client__ = create_authenticated_k5_client(config_graphql)
 # To retrieve the latest 25 published posts for the specified category
 __qgl_post_template__ = '''
 {
-    allPosts(where: {%s, categories_some: {slug: "%s"}, state: published}, sortBy: publishTime_DESC, first: %d) {
+    allPosts(where: {%s, categories_some: {slug: "%s"}, state: published, isAdvertised_not:true}, sortBy: publishTime_DESC, first: %d) {
         name
         slug
         briefHtml
         contentHtml
+        heroCaption
         heroImage {
             urlOriginal
             name
@@ -177,32 +178,40 @@ for id, category in __categories__.items():
     for item in result['allPosts']:
         fe = fg.add_entry(order='append')
         fe.id(__base_url__+item['slug'])
-        name = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', item['name'])
+        name = re.sub(
+            u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', item['name'])
         fe.title(name)
         fe.link(href=__base_url__+item['slug'], rel='alternate')
-        fe.guid(__base_url__ + item['slug'])
+        fe.guid(__base_url__ + item['slug'], permalink='true')
         fe.pubDate(util.formatRFC2822(
             parser.isoparse(item['publishTime']).astimezone(__timezone__)))
 
         content = ''
         brief = item['briefHtml']
         if brief is not None:
-            brief = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', brief)
+            brief = re.sub(
+                u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', brief)
             fe.description(description=brief, isSummary=True)
             content += brief
         if item['heroImage'] is not None:
             fe.media.content(
                 content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
-            content += '<img src="%s" alt="%s" />' % (
-                item['heroImage']['urlOriginal'], item['heroImage']['name'])
+            if item['heroCaption'] is not None:
+                content += '<img src="%s" alt="%s" />' % (
+                    item['heroImage']['urlOriginal'], item['heroCaption'])
+            else:
+                content += '<img src="%s" />' % (
+                    item['heroImage']['urlOriginal'])
         if item['contentHtml'] is not None:
+            #content += re.sub(__config_feed__['ytb_iframe_regex'], '',item['contentHtml'])
             content += item['contentHtml']
         if len(item['relatedPosts']) > 0:
             #content += __config_feed__['item']['relatedPostPrependHtml']
             for related_post in item['relatedPosts'][:3]:
                 content += '<br/><a href="%s">%s</a>' % (
-                    __base_url__+related_post['slug'], related_post['name'])
-        content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', content)
+                    __base_url__+related_post['slug']+__config_feed__['utmSource'], related_post['name'])
+        content = re.sub(
+            u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', content)
         fe.content(content=content, type='CDATA')
         fe.updated(util.formatRFC2822(
             parser.isoparse(item['updatedAt'])))

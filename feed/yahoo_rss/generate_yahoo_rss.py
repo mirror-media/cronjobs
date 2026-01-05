@@ -15,6 +15,7 @@ import hashlib
 import logging
 import yaml
 import re
+import json
 
 
 def create_authenticated_k5_client(config_graphql: dict) -> Client:
@@ -56,6 +57,21 @@ def create_authenticated_k5_client(config_graphql: dict) -> Client:
         fetch_schema_from_transport=False,
     )
 
+def replace_alt_with_descrption(contentHtml, contentApiData, img_list):
+    for img in img_list:
+        if 'alt' in img:
+            alt = re.findall('alt=\".*?\"', img)
+            img_name = re.findall('\".*\"', alt[0])
+            img_name = img_name[0].replace('"', '')
+            for apidata_item in contentApiData:
+                if apidata_item['type'] =='image' and 'name' in apidata_item['content'][0] and apidata_item['content'][0]['name'] == img_name:
+                    if 'title' in apidata_item['content'][0]:
+                        new_description = apidata_item['content'][0]['title']
+                    else:
+                        new_description = ''
+                    contentHtml = contentHtml.replace(alt[0], f'alt="{new_description}"')
+                    break
+    return contentHtml
 
 print(f'[{__main__.__file__}] executing...')
 
@@ -79,6 +95,7 @@ with open(getattr(args, GRAPHQL_CMS_CONFIG_KEY), 'r') as stream:
     config_graphql = yaml.safe_load(stream)
 number = getattr(args, NUMBER_KEY)
 
+
 __gql_client__ = create_authenticated_k5_client(config_graphql)
 
 __seven_days_ago__ = datetime.now(timezone.utc) - timedelta(days=7)
@@ -91,6 +108,8 @@ __qgl_post_template__ = '''
         slug
         briefHtml
         contentHtml
+        contentApiData
+        heroCaption
         heroImage {
             urlOriginal
             name
@@ -152,24 +171,33 @@ for item in __result__['allPosts']:
     fe.updated(util.formatRFC2822(
         parser.isoparse(item['updatedAt']).astimezone(__timezone__)))
     content = ''
-
+    if item['heroImage'] is not None:
+        fe.media.content(
+            content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
+        if item['heroCaption'] is not None:
+            content += '<img src="%s" alt="%s" />' % (
+            item['heroImage']['urlOriginal'], item['heroCaption'])
+        else:
+           content += '<img src="%s" />' % (
+            item['heroImage']['urlOriginal'])
     brief = item['briefHtml']
     if brief is not None:
         brief = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', brief)
         fe.description(description=brief, isSummary=True)
         content += brief
-    if item['heroImage'] is not None:
-        fe.media.content(
-            content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
-        content += '<img src="%s" alt="%s" />' % (
-            item['heroImage']['urlOriginal'], item['heroImage']['name'])
+    
     if item['contentHtml'] is not None:
-        content += item['contentHtml']
+        contentHtml = re.sub(__config_feed__['item']['ytb_iframe_regex'], '',item['contentHtml'])
+        contentApiData = json.loads(item['contentApiData'])
+        img_list = re.findall('<img.*?>', contentHtml)
+        if img_list:
+            contentHtml = replace_alt_with_descrption(contentHtml, contentApiData, img_list)
+        content += contentHtml
     if len(item['relatedPosts']) > 0:
         content += __config_feed__['item']['relatedPostPrependHtml']
         for related_post in item['relatedPosts'][:3]:
             content += '<br/><a href="%s">%s</a>' % (
-                __base_url__+related_post['slug'], related_post['name'])
+                __base_url__+related_post['slug']+ config['feed']['item']['utmSource'] + '_' + item['slug'] + '_' + name, related_post['name'])
     content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', content)
     fe.content(content=content, type='CDATA')
     fe.category(
@@ -192,7 +220,7 @@ def upload_data(bucket_name: str, data: bytes, content_type: str, destination_bl
     blob.upload_from_string(
         data=gzip.compress(data=data, compresslevel=9), content_type=content_type, client=storage_client)
     blob.content_language = 'zh'
-    blob.cache_control = 'max-age=300,public'
+    blob.cache_control = 'max-age=300,public,must-revalidate'
     blob.patch()
 
     print(
