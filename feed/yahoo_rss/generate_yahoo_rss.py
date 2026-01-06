@@ -161,17 +161,15 @@ for item in __result__['allPosts']:
     if item['heroImage'] is not None:
         fe.media.content(
             content={'url': item['heroImage']['urlOriginal'], 'medium': 'image'}, group=None)
-        hero_image_name = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', item['heroImage']['name'])
         content += '<img src="%s" alt="%s" />' % (
-            item['heroImage']['urlOriginal'], hero_image_name)
+            item['heroImage']['urlOriginal'], item['heroImage']['name'])
     if item['contentHtml'] is not None:
-        content_html = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', item['contentHtml'])
-        content += content_html
+        content += item['contentHtml']
     if len(item['relatedPosts']) > 0:
         content += __config_feed__['item']['relatedPostPrependHtml']
         for related_post in item['relatedPosts'][:3]:
-            related_name = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', related_post['name'])
-            content += '<br/><a href="%s">%s</a>' % (__base_url__ + related_post['slug'] + config['feed']['item']['utmSource'] + '_' + item['slug'] + '_' + related_name, related_name)
+            content += '<br/><a href="%s">%s</a>' % (
+                __base_url__+related_post['slug'], related_post['name'])
     content = re.sub(u'[^\u0020-\uD7FF\u0009\u000A\u000D\uE000-\uFFFD\U00010000-\U0010FFFF]+', '', content)
     fe.content(content=content, type='CDATA')
     fe.category(
