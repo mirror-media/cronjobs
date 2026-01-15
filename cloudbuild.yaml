@@ -44,19 +44,22 @@ steps:
 
         do
 
+        echo $kr
         # set the image
         cron="cronjobs-tv-"${kr/*\//}
 
         # update docker image
-
-        /workspace/kustomize edit set image
-        ${cron}=gcr.io/${PROJECT_ID}/cronjobs:${BRANCH_NAME}_${SHORT_SHA}
+        /workspace/kustomize edit fix
+        /workspace/kustomize edit set image ${cron}=gcr.io/${PROJECT_ID}/cronjobs:${BRANCH_NAME}_${SHORT_SHA}_${BUILD_ID}
+        echo gcr.io/${PROJECT_ID}/cronjobs:${BRANCH_NAME}_${SHORT_SHA}_${BUILD_ID} 
 
         # generate kubernetes configs from each kustimization root
 
         /workspace/kustomize build "$kr" >> $_FILE_TO_DEPLOY
 
         # append separate line after each generated kubernetes config
+
+        perl -pi -e 's/v1beta1/v1/g' $_FILE_TO_DEPLOY
 
         echo "---" >> $_FILE_TO_DEPLOY
 
@@ -76,7 +79,7 @@ steps:
       - '-f'
       - $_FILE_TO_DEPLOY
       - '--validate=true'
-timeout: 900s
+timeout: 1200s
 substitutions:
   _KUSTOMIZATION_ROOTS: .
   _FILE_TO_DEPLOY: config-to-deploy.txt

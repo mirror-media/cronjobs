@@ -54,7 +54,7 @@ def get_k3_posts(k3_endpoint: str, max_results: int = 20, sort: str = '-publishe
     '''getK3Posts get posts from k3'''
     logger = logging.getLogger(__main__.__file__)
     logger.setLevel('INFO')
-    url = f'{k3_endpoint}?where={{"state":"published"}}&max_results={max_results}&sort={sort}&populate={populate}'
+    url = f'{k3_endpoint}?where={{"isAdvertised":false,"state":"published"}}&max_results={max_results}&sort={sort}&populate={populate}'
     logger.info(f'sending request:{url}')
     print
     req = urllib.request.Request(

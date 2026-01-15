@@ -24,6 +24,7 @@ RUN set -x \
     && cd /cronjobs/schedule \
     && for dir in */ ; \
     do if cd /cronjobs/schedule/$dir \
+	&& echo $dir \
     && python3 -m venv .venv \
     && . .venv/bin/activate \
     && pip3 install --upgrade pip \

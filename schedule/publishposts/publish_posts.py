@@ -75,21 +75,40 @@ def main(config_graphql: dict = None):
         allArtShows(where:{ state: scheduled, publishTime_lte: "%s"}) {
             id
         }
+        allSales(where:{ state: scheduled, startTime_lte: "%s"}) {
+            id
+        }
     }
-    ''' % (now, now)
+    ''' % (now, now, now)
 
     resp = gql_authenticated_client.execute(
         gql(query_scheduled_posts))
+    query_scheduled_sales_end = '''
+    {
+        allSales(where:{ state: published, endTime_lte: "%s"}){
+            id
+        }
+    }   
+    ''' % (now)
+    resp_end = gql_authenticated_client.execute(gql(query_scheduled_sales_end))
+    
     all_posts = resp['allPosts']
     all_art_shows = resp['allArtShows']
+    all_sales_start= resp['allSales']
+    all_sales_end = resp_end['allSales']
 
     post_data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (post['id'], now)
                  for post in all_posts]
 
     art_show_data = ['{id: %s, data:{state: published, publishTime: "%s"}}' % (art_show['id'], now)
                      for art_show in all_art_shows]
+    sale_start_data = ['{id: %s, data:{state: published, startTime: "%s"}}' % (sale_start['id'], now)
+                    for sale_start in all_sales_start]
+    sale_end_data = ['{id: %s, data:{state: draft, endTime: "%s"}}' % (sale_end['id'], now)
+                    for sale_end in all_sales_end]
+    sale_data = sale_start_data + sale_end_data
 
-    if len(post_data) != 0 or len(art_show_data) != 0:
+    if len(post_data) != 0 or len(art_show_data) != 0 or len(sale_data) != 0 :
         publish_mutation = '''
         mutation {
             updatePosts(data: [%s]){
@@ -102,9 +121,12 @@ def main(config_graphql: dict = None):
                 name
                 state
             }
+            updateSales(data: [%s]){
+                id
+                state
+            }
         }
-        ''' % (' ,'.join(post_data), ' ,'.join(art_show_data))
-
+        ''' % (' ,'.join(post_data), ' ,'.join(art_show_data), ' ,'.join(sale_data))
         resp = gql_authenticated_client.execute(
             gql(publish_mutation))
         updated_posts = resp['updatePosts']
@@ -115,6 +137,10 @@ def main(config_graphql: dict = None):
         for art_show in updated_art_shows:
             logger.info(
                 f'post(id: {art_show["id"]}) {art_show["name"]} is {art_show["state"]}')
+        updated_sales = resp['updateSales']
+        for sale in updated_sales:
+            logger.info(
+                f'post(id: {sale["id"]}) is {sale["state"]}')
     else:
         logger.info('there is no scheduled post ready to be published')
 
